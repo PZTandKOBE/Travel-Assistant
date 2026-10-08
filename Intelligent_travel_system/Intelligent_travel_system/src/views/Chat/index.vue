@@ -1,0 +1,1112 @@
+<template>
+  <div 
+    class="flex flex-col h-screen bg-gray-50 relative overflow-hidden font-sans"
+    @touchstart="handleTouchStart"
+    @touchend="handleTouchEnd"
+  >
+    <div class="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+      <div v-if="isRainy" class="weather-layer rain-container">
+        <div class="rain-layer layer-1"></div>
+        <div class="rain-layer layer-2"></div>
+        <div class="rain-overlay"></div>
+      </div>
+      <div v-if="isSunny" class="weather-layer sun-container">
+        <div class="sun-beams"></div>
+        <div class="sun-glow"></div>
+      </div>
+      <div v-if="isCloudy" class="weather-layer cloud-container">
+        <div class="cloud x1"></div>
+        <div class="cloud x2"></div>
+        <div class="cloud x3"></div>
+      </div>
+      <div v-if="isSnowy" class="weather-layer snow-container">
+        <div class="snow layer-1"></div>
+        <div class="snow layer-2"></div>
+        <div class="snow layer-3"></div>
+      </div>
+      <div v-if="isFoggy" class="weather-layer fog-container">
+        <div class="fog-img fog-img-first"></div>
+        <div class="fog-img fog-img-second"></div>
+      </div>
+    </div>
+
+    <van-nav-bar 
+      :title="title" 
+      :left-arrow="!!route.query.id" 
+      @click-left="handleBack" 
+      fixed 
+      placeholder 
+      z-index="50"
+      :border="false"
+      class="custom-nav relative z-50"
+    >
+      <template #left v-if="!route.query.id">
+        <van-icon name="wap-nav" size="24" class="text-gray-700" @click="showHistory = true" />
+      </template>
+      <template #right>
+        <div @click="router.push('/user')" class="flex items-center justify-center w-9 h-9 bg-white/50 backdrop-blur-md rounded-full cursor-pointer hover:bg-white/80 transition-all shadow-sm active:scale-95 overflow-hidden">
+           <img 
+            v-if="userStore.userInfo?.userAvatar" 
+            :src="userStore.userInfo.userAvatar" 
+            class="w-full h-full object-cover"
+            alt="用户"
+           />
+           <span v-else class="text-base">👤</span>
+        </div>
+      </template>
+    </van-nav-bar>
+
+    <div 
+      class="flex-1 overflow-y-auto p-4 space-y-6 relative z-10" 
+      ref="chatContainer"
+      @scroll="handleScroll"
+    >
+      <div v-for="msg in chatStore.messages" :key="msg.id" class="flex flex-col">
+        <div class="text-center text-xs text-gray-400/80 mb-3 scale-90">
+          {{ formatTime(msg.createdAt) }}
+        </div>
+
+        <div :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']">
+          
+          <div v-if="msg.role === 'assistant'" class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center mr-3 flex-shrink-0 border-2 border-white shadow-sm overflow-hidden">
+            <span class="text-xl">🤖</span>
+          </div>
+
+          <div class="flex flex-col max-w-[85%]">
+            <div 
+              :class="[
+                'px-4 py-3 rounded-2xl text-[15px] leading-relaxed shadow-sm break-words transition-all',
+                msg.role === 'user' 
+                  ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-tr-sm shadow-indigo-100' 
+                  : 'bg-white/90 backdrop-blur-sm text-gray-800 rounded-tl-sm border border-gray-100 shadow-gray-100'
+              ]"
+            >
+              <!-- 用户上传的图片（从 tempContent 或从消息内容中提取） -->
+              <img 
+                v-if="getImageUrl(msg)" 
+                :src="getImageUrl(msg)!" 
+                class="rounded-lg mb-2 max-w-full border border-white/20 cursor-pointer hover:opacity-90 transition-opacity" 
+                alt="发送的图片"
+                @click="previewImage(getImageUrl(msg)!)"
+              />
+
+              <!-- AI 思考中动画 -->
+              <div v-if="msg.isThinking && !msg.content" class="flex items-center space-x-1 py-1 h-6">
+                 <div class="typing-dot"></div>
+                 <div class="typing-dot animation-delay-200"></div>
+                 <div class="typing-dot animation-delay-400"></div>
+                 <span class="ml-2 text-xs text-gray-400">AI正在思考...</span>
+              </div>
+
+              <!-- 消息内容（Markdown 渲染） -->
+              <div 
+                v-else-if="msg.content"
+                :class="[
+                  'message-content markdown-body',
+                  msg.role === 'user' ? 'user-message' : 'assistant-message'
+                ]" 
+                v-html="renderMessage(msg.content, msg.role)"
+              ></div>
+            </div>
+
+            <!-- 地图卡片和产品卡片：放在消息气泡下方 -->
+            <template v-if="msg.locations && msg.locations.length > 0">
+              <LocationCard 
+                v-for="(loc, idx) in msg.locations"
+                :key="idx"
+                :data="loc"
+                class="mt-3 shadow-md"
+              />
+            </template>
+            <LocationCard 
+              v-else-if="msg.type === 'location' && msg.location" 
+              :data="msg.location"
+              class="mt-3 shadow-md"
+            />
+            <template v-if="msg.type === 'product' && msg.products">
+              <ProductCard 
+                v-for="(prod, idx) in msg.products" 
+                :key="idx"
+                :data="prod"
+                class="mt-3 shadow-md"
+              />
+            </template>
+          </div>
+
+          <div v-if="msg.role === 'user'" class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center ml-3 flex-shrink-0 border-2 border-white shadow-sm overflow-hidden">
+            <img 
+              v-if="userStore.userInfo?.userAvatar" 
+              :src="userStore.userInfo.userAvatar" 
+              class="w-full h-full object-cover"
+              alt="User"
+            />
+            <span v-else class="text-xl">👤</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <van-popup 
+      v-model:show="showHistory" 
+      position="right" 
+      :style="{ width: '75%', height: '100%' }"
+      class="bg-gray-50"
+    >
+      <div class="flex flex-col h-full">
+        <div class="p-4 bg-white shadow-sm border-b flex justify-between items-center">
+          <h2 class="text-lg font-bold text-gray-800">历史会话</h2>
+          <van-icon name="cross" @click="showHistory = false" class="text-gray-500" />
+        </div>
+        <div class="flex-1 overflow-y-auto p-2">
+          <van-empty v-if="!chatStore.historyList?.length" description="暂无历史记录" />
+          <div 
+            v-for="item in chatStore.historyList" 
+            :key="item.id"
+            @click="switchConversation(item.id)"
+            :class="[
+              'p-3 mb-3 rounded-xl border transition-all cursor-pointer active:scale-95 group relative',
+              currentConversationId === item.id 
+                ? 'bg-indigo-50 border-indigo-200 shadow-inner' 
+                : 'bg-white border-gray-100 shadow-sm hover:shadow-md'
+            ]"
+          >
+            <div class="font-medium text-gray-800 line-clamp-1 mb-1 pr-6">{{ item.title || '新会话' }}</div>
+            <div class="text-xs text-gray-400 flex justify-between">
+              <span>{{ formatTime(item.updatedAt || item.createdAt) }}</span>
+              <span v-if="currentConversationId === item.id" class="text-indigo-500">当前</span>
+            </div>
+            
+            <div class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity" @click.stop="confirmDelete(item.id)">
+               <van-icon name="delete-o" class="text-red-400 hover:text-red-600" />
+            </div>
+          </div>
+        </div>
+        <div class="p-4 border-t bg-white">
+           <van-button block type="primary" plain size="small" @click="startNewChat">
+             <template #icon><van-icon name="plus" /></template>
+             开启新会话
+           </van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <div class="bg-white/80 backdrop-blur-xl border-t border-gray-100/50 safe-area-bottom relative z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.02)] flex flex-col">
+      <!-- 图片预览区域 -->
+      <div v-if="imagePreviewUrl" class="px-4 pt-3 pb-2 border-b border-gray-100">
+        <div class="relative inline-block">
+          <img :src="imagePreviewUrl" class="h-20 w-20 object-cover rounded-lg border-2 border-indigo-200" alt="预览" />
+          <button 
+            @click="cancelImageSelection"
+            class="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-md"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">已选择图片，可以输入问题或直接发送</p>
+      </div>
+      
+      <div class="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto no-scrollbar w-full" v-if="!showVoicePanel">
+        <button
+          v-for="item in quickActions"
+          :key="item"
+          @click="handleQuickAction(item)"
+          :disabled="chatStore.isStreaming"
+          class="flex-shrink-0 px-3 py-1.5 bg-indigo-50 text-indigo-600 text-xs font-medium rounded-full border border-indigo-100 active:bg-indigo-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+        >
+          {{ item }}
+        </button>
+      </div>
+
+      <div class="flex items-center gap-3 px-4 py-3">
+        
+        <button 
+          @click="router.push('/game')"
+          class="p-2 rounded-full text-yellow-500 bg-yellow-50 hover:bg-yellow-100 hover:text-yellow-600 border border-yellow-200 shadow-sm transition-all active:scale-95 flex-shrink-0"
+          title="知识闯关"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+        </button>
+
+        <button 
+          @click="toggleVoicePanel" 
+          class="p-2 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+        >
+           <svg v-if="showVoicePanel" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+           </svg>
+           <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+           </svg>
+        </button>
+
+        <input 
+          v-model="inputContent" 
+          @keyup.enter="handleSend"
+          type="text" 
+          class="flex-1 bg-gray-100/80 rounded-full px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:bg-white transition-all placeholder-gray-400"
+          :placeholder="showVoicePanel ? '按住下方按钮说话...' : '问问附近的非遗体验...'" 
+          :disabled="chatStore.isStreaming || showVoicePanel"
+        />
+
+        <button @click="triggerImageUpload" class="p-2 rounded-full text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </button>
+        <input type="file" ref="fileInput" accept="image/*" class="hidden" @change="handleFileChange" />
+
+        <button 
+          @click="handleSend"
+          :disabled="(!inputContent.trim() && !selectedImage) || chatStore.isStreaming"
+          :class="[
+            'rounded-full p-3 transition-all duration-300 flex items-center justify-center',
+            (inputContent.trim() || selectedImage) && !chatStore.isStreaming 
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-100 hover:bg-indigo-700' 
+              : 'bg-gray-100 text-gray-300 scale-95'
+          ]"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+          </svg>
+        </button>
+      </div>
+
+      <div v-if="showVoicePanel" class="bg-gray-50 border-t border-gray-100 p-8 flex justify-center items-center h-48 transition-all animate-slide-up">
+         <div class="relative">
+           <button 
+             @mousedown="startRecording" 
+             @mouseup="stopRecording" 
+             @touchstart.prevent="startRecording" 
+             @touchend.prevent="stopRecording"
+             :class="[
+               'w-24 h-24 rounded-full flex items-center justify-center text-4xl shadow-xl select-none transition-all duration-200',
+               isRecording ? 'bg-indigo-500 text-white scale-110 ring-8 ring-indigo-200' : 'bg-white text-indigo-500 hover:shadow-2xl'
+             ]"
+           >
+             🎙️
+           </button>
+           <div v-if="isRecording" class="absolute inset-0 rounded-full animate-ping bg-indigo-400 opacity-20 z-0"></div>
+         </div>
+         <p class="absolute bottom-6 text-gray-400 text-sm font-medium">{{ isRecording ? '松开结束' : '按住说话' }}</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, nextTick, watch, computed, onUnmounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useChatStore } from '../../stores/chatStore';
+import { useUserStore } from '../../stores/userStore';
+import { showConfirmDialog, showToast } from 'vant';
+import LocationCard from './LocationCard.vue';
+import ProductCard from './ProductCard.vue';
+import MarkdownIt from 'markdown-it'; 
+import { XFVoiceClient } from '../../utils/xf-voice';
+
+const route = useRoute();
+const router = useRouter();
+const chatStore = useChatStore();
+const userStore = useUserStore();
+const inputContent = ref('');
+const chatContainer = ref<HTMLElement | null>(null);
+
+const showHistory = ref(false);
+const currentConversationId = computed(() => chatStore.currentConversationId);
+
+// 🌟 核心状态：判断用户是否正在向上翻阅历史记录
+const isUserScrolling = ref(false);
+
+const isRecording = ref(false);
+const showVoicePanel = ref(false);
+const fileInput = ref<HTMLInputElement | null>(null);
+const selectedImage = ref<File | null>(null); // 存储选中的图片
+const imagePreviewUrl = ref<string | null>(null); // 图片预览URL
+let voiceClient: XFVoiceClient | null = null;
+
+const title = computed(() => {
+  if (route.query.id) {
+    const id = Number(route.query.id);
+    const item = chatStore.historyList.find(i => i.id === id);
+    return item?.title || '历史回顾';
+  }
+  if (currentConversationId.value) {
+    const item = chatStore.historyList.find(i => i.id === currentConversationId.value);
+    return item?.title || '非遗伴游';
+  }
+  return '非遗伴游';
+});
+
+const md = new MarkdownIt({
+  html: true,       
+  linkify: true,    
+  breaks: true      
+});
+
+const quickActions = [
+  '📍 附近推荐',
+  '🎨 非遗介绍',
+  '🛍️ 文创产品',
+  '🗺️ 游览路线',
+  '🏺 历史渊源'
+];
+
+const w = computed(() => (chatStore.envContext.weather || '').toLowerCase());
+const isRainy = computed(() => /雨|rain|shower|drizzle|storm/i.test(w.value));
+const isSunny = computed(() => /晴|sunny|clear/i.test(w.value));
+const isCloudy = computed(() => /云|阴|cloud|overcast/i.test(w.value));
+const isSnowy = computed(() => /雪|snow|blizzard/i.test(w.value));
+const isFoggy = computed(() => /雾|fog|mist|haze/i.test(w.value));
+
+// 图片URL缓存，避免重复计算
+const imageUrlCache = new Map<string, string | null>();
+
+// 从消息中提取图片URL（带缓存）
+const getImageUrl = (msg: any): string | null => {
+  const msgId = msg.id || JSON.stringify(msg);
+  
+  // 检查缓存
+  if (imageUrlCache.has(msgId)) {
+    return imageUrlCache.get(msgId)!;
+  }
+  
+  let url: string | null = null;
+  
+  // 1. 优先从 tempContent 获取（实时上传的图片）
+  if (msg.tempContent) {
+    url = msg.tempContent;
+  }
+  // 2. 从 toolCall 字段解析（历史记录）
+  else if (msg.toolCall) {
+    try {
+      const toolData = JSON.parse(msg.toolCall);
+      if (toolData.type === 'image' && toolData.url) {
+        url = toolData.url;
+      }
+    } catch (e) {
+      // 解析失败，继续尝试其他方法
+    }
+  }
+  // 3. 从消息内容中提取图片URL（兼容旧格式）
+  else if (msg.content && typeof msg.content === 'string') {
+    // 匹配 "图片: https://..." 格式
+    const match = msg.content.match(/图片[：:]\s*(https?:\/\/[^\s]+)/);
+    if (match && match[1]) {
+      url = match[1];
+    }
+  }
+  
+  // 缓存结果
+  imageUrlCache.set(msgId, url);
+  return url;
+};
+
+const renderMessage = (content: string, role?: string) => {
+  if (!content) return '';
+  
+  // 先处理转义的换行符
+  let processedContent = content.replace(/\\n/g, '\n');
+  
+  // 移除图片URL行（如果存在），因为图片会单独渲染
+  processedContent = processedContent.replace(/图片[：:]\s*https?:\/\/[^\s]+\n?/g, '');
+  
+  // 移除 [图片识别] 标签
+  processedContent = processedContent.replace(/\[图片识别\]\s*/g, '');
+  
+  // 如果处理后内容为空，返回空字符串
+  if (!processedContent.trim()) {
+    return '';
+  }
+  
+  // 渲染 Markdown
+  let html = md.render(processedContent);
+  
+  // 增强图片渲染：添加样式和点击预览功能
+  html = html.replace(
+    /<img src="(.*?)" alt="(.*?)"(.*?)>/g, 
+    '<img src="$1" alt="$2" class="chat-image rounded-xl my-3 max-w-full h-auto shadow-md border border-gray-200 cursor-pointer hover:shadow-lg transition-all" loading="lazy" onclick="window.previewImage(\'$1\')" />'
+  );
+  
+  // 处理链接：在新标签页打开
+  html = html.replace(
+    /<a href="(.*?)">/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">'
+  );
+  
+  return html;
+};
+
+// 图片预览功能
+const previewImage = (url: string) => {
+  // 使用 Vant 的 ImagePreview
+  import('vant').then(({ showImagePreview }) => {
+    showImagePreview({
+      images: [url],
+      closeable: true,
+    });
+  });
+};
+
+// 将预览函数挂载到 window 对象，供 HTML 中的 onclick 调用
+if (typeof window !== 'undefined') {
+  (window as any).previewImage = previewImage;
+}
+
+const formatTime = (time: string | number) => {
+  const date = new Date(time);
+  const isToday = new Date().toDateString() === date.toDateString();
+  return isNaN(date.getTime()) 
+    ? '' 
+    : isToday 
+      ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+};
+
+// 🌟 滚动处理函数：判断用户是否偏离底部
+const handleScroll = () => {
+  if (!chatContainer.value) return;
+  const { scrollTop, scrollHeight, clientHeight } = chatContainer.value;
+  // 如果距离底部超过 100px，则认为用户正在浏览历史
+  isUserScrolling.value = scrollHeight - scrollTop - clientHeight > 100;
+};
+
+// 防抖定时器
+let scrollTimer: any = null;
+
+// 🌟 智能滚动函数（带防抖）
+const scrollToBottom = (force = false) => {
+  // 清除之前的定时器
+  if (scrollTimer) {
+    clearTimeout(scrollTimer);
+  }
+  
+  // 使用防抖，避免频繁滚动导致抖动
+  scrollTimer = setTimeout(() => {
+    nextTick(() => {
+      if (chatContainer.value) {
+        // 只有在强制滚动，或者用户当前就在底部附近时，才执行滚动
+        if (force || !isUserScrolling.value) {
+          chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+          if (force) isUserScrolling.value = false; // 强制滚动后，重置状态
+        }
+      }
+    });
+  }, force ? 0 : 100); // 强制滚动立即执行，否则延迟100ms
+};
+
+// 🌟 监听：新消息增加 -> 强制滚动
+watch(() => chatStore.messages.length, () => {
+  scrollToBottom(true);
+});
+
+// 🌟 监听：消息内容变化（打字机效果）-> 智能滚动（仅在流式传输时）
+watch(() => chatStore.messages[chatStore.messages.length - 1], () => {
+  // 只有在流式传输时才自动滚动，否则用户可能在查看历史消息
+  if (chatStore.isStreaming) {
+    scrollToBottom(false);
+  }
+}, { deep: true });
+
+watch(showHistory, (newVal) => {
+  if (newVal) chatStore.fetchHistory();
+});
+
+const initOrLoad = async () => {
+  const historyId = route.query.id as string;
+  if (historyId) {
+    await chatStore.loadHistory(historyId);
+  } else {
+    if (chatStore.messages.length === 0) {
+      await chatStore.initChat();
+    }
+  }
+  scrollToBottom(true); // 初始化强制到底部
+};
+
+watch(() => route.query.id, () => { initOrLoad(); });
+onMounted(() => { initOrLoad(); });
+
+onUnmounted(() => {
+  if (voiceClient) voiceClient.stop();
+  if (scrollTimer) clearTimeout(scrollTimer);
+  if (imagePreviewUrl.value) URL.revokeObjectURL(imagePreviewUrl.value);
+  imageUrlCache.clear(); // 清理缓存
+});
+
+const handleBack = () => {
+  if (route.query.id) router.back();
+  else showHistory.value = true;
+};
+
+const handleQuickAction = (text: string) => {
+  if (chatStore.isStreaming) return;
+  chatStore.sendMessage(text);
+};
+
+const handleSend = () => {
+  // 如果有选中的图片，发送图片消息
+  if (selectedImage.value) {
+    chatStore.sendImageMessage(selectedImage.value, inputContent.value);
+    
+    // 清理图片相关状态
+    selectedImage.value = null;
+    if (imagePreviewUrl.value) {
+      URL.revokeObjectURL(imagePreviewUrl.value);
+      imagePreviewUrl.value = null;
+    }
+    inputContent.value = '';
+    return;
+  }
+  
+  // 否则发送普通文本消息
+  if (!inputContent.value.trim() || chatStore.isStreaming) return;
+  chatStore.sendMessage(inputContent.value);
+  inputContent.value = '';
+};
+
+const triggerImageUpload = () => {
+  fileInput.value?.click();
+};
+
+const cancelImageSelection = () => {
+  selectedImage.value = null;
+  if (imagePreviewUrl.value) {
+    URL.revokeObjectURL(imagePreviewUrl.value);
+    imagePreviewUrl.value = null;
+  }
+  showToast('已取消图片选择');
+};
+
+const handleFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    const file = target.files[0];
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('图片不能超过 10MB');
+      return;
+    }
+    
+    // 保存选中的图片
+    selectedImage.value = file;
+    
+    // 创建预览URL
+    imagePreviewUrl.value = URL.createObjectURL(file);
+    
+    // 提示用户可以输入问题
+    showToast('图片已选择，可以输入问题或直接发送');
+  }
+  if (target.value) target.value = '';
+};
+
+const toggleVoicePanel = () => {
+  showVoicePanel.value = !showVoicePanel.value;
+};
+
+const startRecording = async () => {
+  isRecording.value = true;
+  if (!voiceClient) {
+    voiceClient = new XFVoiceClient(
+      (text, isFinal) => {
+        inputContent.value += text;
+      },
+      (err) => {
+        showToast(err);
+        isRecording.value = false;
+      }
+    );
+  }
+  await voiceClient.start();
+};
+
+const stopRecording = () => {
+  if (voiceClient) {
+    voiceClient.stop();
+  }
+  isRecording.value = false;
+};
+
+const touchStart = ref({ x: 0, y: 0 });
+const minSwipeDistance = 50; 
+const handleTouchStart = (e: TouchEvent) => {
+  touchStart.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+};
+const handleTouchEnd = (e: TouchEvent) => {
+  const touchEnd = { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  const deltaX = touchEnd.x - touchStart.value.x;
+  const deltaY = touchEnd.y - touchStart.value.y;
+  if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaY) < 50) {
+    if (deltaX < 0) showHistory.value = true; 
+  }
+};
+
+const switchConversation = async (id: number) => {
+  if (currentConversationId.value === id) {
+    showHistory.value = false;
+    return;
+  }
+  await chatStore.loadHistory(id);
+  showHistory.value = false;
+  if (route.query.id) router.replace({ query: { ...route.query, id: id } });
+};
+
+const startNewChat = () => {
+  chatStore.resetChat();
+  showHistory.value = false;
+  if (route.query.id) router.push('/chat');
+};
+
+const confirmDelete = (id: number) => {
+  showConfirmDialog({
+    title: '删除会话',
+    message: '确定要删除这条会话记录吗？',
+  })
+    .then(() => {
+      chatStore.deleteConversation(id);
+    })
+    .catch(() => {});
+};
+</script>
+
+<style scoped>
+.safe-area-bottom {
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.custom-nav {
+  --van-nav-bar-background: rgba(255, 255, 255, 0.6);
+  --van-nav-bar-title-text-color: #1f2937;
+  backdrop-filter: blur(10px);
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ==================== Markdown 样式 ==================== */
+.message-content {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 段落 */
+.message-content :deep(p) {
+  margin: 0.6em 0;
+  line-height: 1.6;
+}
+.message-content :deep(p:first-child) {
+  margin-top: 0;
+}
+.message-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+/* 列表 */
+.message-content :deep(ul), 
+.message-content :deep(ol) {
+  margin: 0.8em 0;
+  padding-left: 1.8em;
+}
+.message-content :deep(ul) {
+  list-style-type: disc;
+}
+.message-content :deep(ol) {
+  list-style-type: decimal;
+}
+.message-content :deep(li) {
+  margin: 0.3em 0;
+  line-height: 1.6;
+}
+.message-content :deep(li > ul),
+.message-content :deep(li > ol) {
+  margin: 0.3em 0;
+}
+
+/* 标题 */
+.message-content :deep(h1), 
+.message-content :deep(h2), 
+.message-content :deep(h3),
+.message-content :deep(h4),
+.message-content :deep(h5),
+.message-content :deep(h6) {
+  font-weight: 700;
+  margin-top: 1.2em;
+  margin-bottom: 0.6em;
+  line-height: 1.3;
+}
+.message-content :deep(h1:first-child),
+.message-content :deep(h2:first-child),
+.message-content :deep(h3:first-child) {
+  margin-top: 0;
+}
+.message-content :deep(h1) { 
+  font-size: 1.5em;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.3em;
+}
+.message-content :deep(h2) { 
+  font-size: 1.3em;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.2em;
+}
+.message-content :deep(h3) { font-size: 1.15em; }
+.message-content :deep(h4) { font-size: 1.05em; }
+
+/* 加粗和斜体 */
+.message-content :deep(strong) {
+  font-weight: 700;
+}
+.assistant-message :deep(strong) {
+  color: #4f46e5;
+}
+.user-message :deep(strong) {
+  color: #fef3c7;
+}
+.message-content :deep(em) {
+  font-style: italic;
+}
+
+/* 行内代码 */
+.message-content :deep(code) {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  padding: 0.15em 0.4em;
+  border-radius: 0.25em;
+}
+.assistant-message :deep(code) {
+  background-color: #f1f5f9;
+  color: #e11d48;
+}
+.user-message :deep(code) {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #fef3c7;
+}
+
+/* 代码块 */
+.message-content :deep(pre) {
+  background-color: #1e293b;
+  padding: 1em;
+  border-radius: 0.5em;
+  overflow-x: auto;
+  margin: 1em 0;
+  border: 1px solid #334155;
+}
+.message-content :deep(pre code) {
+  background-color: transparent;
+  padding: 0;
+  color: #e2e8f0;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+/* 引用 */
+.message-content :deep(blockquote) {
+  border-left: 4px solid #cbd5e1;
+  padding-left: 1em;
+  margin: 1em 0;
+  color: #64748b;
+  font-style: italic;
+}
+.user-message :deep(blockquote) {
+  border-left-color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* 链接 */
+.message-content :deep(a) {
+  text-decoration: underline;
+  transition: opacity 0.2s;
+}
+.assistant-message :deep(a) {
+  color: #4f46e5;
+}
+.user-message :deep(a) {
+  color: #fef3c7;
+}
+.message-content :deep(a:hover) {
+  opacity: 0.8;
+}
+
+/* 分割线 */
+.message-content :deep(hr) {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 1.5em 0;
+}
+
+/* 表格 */
+.message-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 0.9em;
+}
+.message-content :deep(th),
+.message-content :deep(td) {
+  border: 1px solid #e5e7eb;
+  padding: 0.5em 0.8em;
+  text-align: left;
+}
+.message-content :deep(th) {
+  background-color: #f8fafc;
+  font-weight: 600;
+}
+.message-content :deep(tr:nth-child(even)) {
+  background-color: #f8fafc;
+}
+
+/* 图片 */
+.message-content :deep(.chat-image) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1em 0;
+}
+
+/* 删除线 */
+.message-content :deep(del) {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* ==================== 打字机圆点动画 ==================== */
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  background-color: #6366f1;
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out both;
+  margin-right: 3px;
+}
+
+.animation-delay-200 {
+  animation-delay: 0.2s;
+}
+
+.animation-delay-400 {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ==================== 天气背景动画 CSS ==================== */
+.weather-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  opacity: 0.6;
+}
+
+/* 雨天 */
+.rain-container {
+  background: linear-gradient(to bottom, #cfd9df 0%, #e2ebf0 100%);
+}
+.rain-layer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-image: repeating-linear-gradient(transparent, transparent 50px, rgba(79, 70, 229, 0.3) 50px, rgba(79, 70, 229, 0.3) 53px);
+  background-size: 2px 100%;
+  opacity: 0;
+}
+.layer-1 {
+  animation: rain-fall 1s linear infinite;
+  opacity: 0.6;
+}
+.layer-2 {
+  background-size: 3px 100%;
+  animation: rain-fall 0.7s linear infinite;
+  opacity: 0.4;
+  left: 20%;
+}
+.rain-overlay {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 30%;
+  background: linear-gradient(to top, rgba(255, 255, 255, 1), transparent);
+}
+@keyframes rain-fall {
+  0% { transform: translateY(-100vh); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+/* 晴天 */
+.sun-container {
+  background: linear-gradient(to bottom, #fff7e6 0%, #ffffff 100%);
+}
+.sun-glow {
+  position: absolute;
+  top: -150px;
+  right: -150px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0) 70%);
+  border-radius: 50%;
+  animation: sun-pulse 6s ease-in-out infinite alternate;
+}
+.sun-beams {
+  position: absolute;
+  top: -200px;
+  right: -200px;
+  width: 600px;
+  height: 600px;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(251, 191, 36, 0.1) 20deg, transparent 40deg, rgba(251, 191, 36, 0.1) 60deg, transparent 80deg);
+  border-radius: 50%;
+  animation: sun-rotate 20s linear infinite;
+}
+@keyframes sun-pulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.1); opacity: 1; }
+}
+@keyframes sun-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 阴/云天 */
+.cloud-container {
+  background: linear-gradient(to bottom, #e0eafc 0%, #cfdef3 100%);
+}
+.cloud {
+  background: #fff;
+  border-radius: 100px;
+  position: absolute;
+  margin: 120px auto 20px;
+  opacity: 0.8;
+}
+.cloud:after, .cloud:before {
+  content: '';
+  position: absolute;
+  background: inherit;
+  z-index: -1;
+}
+.cloud:after {
+  width: 100px;
+  height: 100px;
+  top: -50px;
+  left: 50px;
+  border-radius: 100px;
+}
+.cloud:before {
+  width: 120px;
+  height: 120px;
+  top: -90px;
+  right: 50px;
+  border-radius: 200px;
+}
+.x1 {
+  width: 250px;
+  height: 80px;
+  top: 10px;
+  left: 10%;
+  animation: moveclouds 25s linear infinite;
+  transform: scale(0.6);
+}
+.x2 {
+  width: 300px;
+  height: 100px;
+  top: 80px;
+  left: 40%;
+  animation: moveclouds 35s linear infinite;
+  transform: scale(0.8);
+}
+.x3 {
+  width: 200px;
+  height: 60px;
+  top: 150px;
+  left: 70%;
+  animation: moveclouds 20s linear infinite;
+  transform: scale(0.4);
+}
+@keyframes moveclouds {
+  0% { margin-left: 100%; }
+  100% { margin-left: -100%; }
+}
+
+/* 雪天 */
+.snow-container {
+  background: linear-gradient(to bottom, #E0EAFC 0%, #CFDEF3 100%);
+}
+.snow {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-image: radial-gradient(#fff 2px, transparent 2px);
+  background-size: 50px 50px;
+}
+.layer-1 {
+  animation: snow-fall 10s linear infinite;
+  opacity: 0.8;
+}
+.layer-2 {
+  background-size: 40px 40px;
+  animation: snow-fall 8s linear infinite;
+  opacity: 0.6;
+}
+.layer-3 {
+  background-size: 30px 30px;
+  animation: snow-fall 6s linear infinite;
+  opacity: 0.4;
+}
+@keyframes snow-fall {
+  0% { background-position: 0 0; }
+  100% { background-position: 50px 500px; }
+}
+
+/* 雾天 */
+.fog-container {
+  background: #dcdcdc;
+}
+.fog-img {
+  position: absolute;
+  height: 100vh;
+  width: 300vw;
+  background: url('https://raw.githubusercontent.com/danielstuart14/CSS_FOG_ANIMATION/master/fog1.png') repeat-x;
+  background-size: contain;
+}
+.fog-img-first {
+  animation: fog 60s linear infinite;
+}
+.fog-img-second {
+  animation: fog 40s linear infinite;
+  top: 30%;
+}
+@keyframes fog {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-200vw, 0, 0); }
+}
+</style>

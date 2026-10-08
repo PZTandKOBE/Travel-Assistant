@@ -1,0 +1,148 @@
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+// src/router/index.ts
+import { createRouter, createWebHistory } from 'vue-router';
+import { showDialog } from 'vant'; // 引入 Vant 弹窗组件
+import { useUserStore } from '../stores/userStore'; // 引入 UserStore
+import Login from '../views/Login/index.vue';
+import Home from '../views/Home/index.vue';
+import Chat from '../views/Chat/index.vue';
+import User from '../views/User/index.vue';
+import Document from '../views/User/Document.vue';
+import History from '../views/Chat/History.vue';
+import Password from '../views/User/Password.vue';
+import Game from '../views/Game/index.vue';
+var routes = [
+    {
+        path: '/',
+        name: 'Home',
+        component: Home,
+        meta: { title: '非遗伴游' } // 首页通常不需要登录，保留游客访问
+    },
+    {
+        path: '/login',
+        name: 'Login',
+        component: Login,
+        meta: { title: '登录' }
+    },
+    {
+        path: '/chat',
+        name: 'Chat',
+        component: Chat,
+        meta: { title: '智能伴游', requiresAuth: true } // 需要登录
+    },
+    {
+        path: '/chat/history',
+        name: 'ChatHistory',
+        component: History,
+        meta: { title: '历史会话', requiresAuth: true } // 需要登录
+    },
+    {
+        path: '/user',
+        name: 'User',
+        component: User,
+        meta: { title: '个人中心', requiresAuth: true } // 需要登录
+    },
+    {
+        path: '/user/documents',
+        name: 'UserDocument',
+        component: Document,
+        meta: { title: '游览报告', requiresAuth: true } // 需要登录
+    },
+    {
+        path: '/user/password',
+        name: 'UserPassword',
+        component: Password,
+        meta: { title: '修改密码', requiresAuth: true } // 需要登录
+    },
+    {
+        path: '/game',
+        name: 'Game',
+        component: Game,
+        meta: { title: '非遗知识闯关', requiresAuth: true } // 需要登录
+    }
+];
+var router = createRouter({
+    history: createWebHistory(),
+    routes: routes,
+});
+// 🌟 全局前置守卫：核心修改逻辑
+router.beforeEach(function (to, from, next) { return __awaiter(void 0, void 0, void 0, function () {
+    var userStore, e_1;
+    return __generator(this, function (_a) {
+        switch (_a.label) {
+            case 0:
+                // 1. 设置标题
+                document.title = to.meta.title || '非遗伴游';
+                userStore = useUserStore();
+                if (!to.meta.requiresAuth) return [3 /*break*/, 5];
+                if (!!userStore.userInfo) return [3 /*break*/, 5];
+                _a.label = 1;
+            case 1:
+                _a.trys.push([1, 3, , 4]);
+                // 4. 弹窗提示
+                return [4 /*yield*/, showDialog({
+                        title: '温馨提示',
+                        message: '您尚未登录，为了提供更好的伴游和定位服务，请先登录账号。',
+                        confirmButtonText: '去登录',
+                        theme: 'round-button',
+                        width: '85%', // 稍微调宽一点，移动端更好看
+                    })];
+            case 2:
+                // 4. 弹窗提示
+                _a.sent();
+                // 5. 用户点击确定后，跳转登录页
+                // 将目标页面作为 redirect 参数传过去，登录成功后可以跳回来
+                next({
+                    path: '/login',
+                    query: { redirect: to.fullPath }
+                });
+                return [3 /*break*/, 4];
+            case 3:
+                e_1 = _a.sent();
+                // 如果用户怎么操作取消了(虽然 alert 模式通常只有确定)，则阻止跳转
+                next(false);
+                return [3 /*break*/, 4];
+            case 4: return [2 /*return*/];
+            case 5:
+                // 放行
+                next();
+                return [2 /*return*/];
+        }
+    });
+}); });
+export default router;
